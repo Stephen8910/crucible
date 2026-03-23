@@ -1,0 +1,13 @@
+[package]
+name = "crucible"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.76"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[dev-dependencies]
+soroban-sdk = { version = "21", features = ["testutils"] }
