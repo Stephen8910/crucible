@@ -4,9 +4,9 @@
 //! keypair signing support and balance helpers, and `AccountBuilder` for
 //! easy pre-funded account creation.
 
-use soroban_sdk::Address;
 use crate::env::{MockEnv, Stroops};
 use crate::token::MockToken;
+use soroban_sdk::Address;
 
 /// A handle to a Soroban account used in tests.
 pub struct AccountHandle {
@@ -18,7 +18,11 @@ pub struct AccountHandle {
 impl AccountHandle {
     /// Internal constructor for use by `AccountBuilder` or `MockEnv`.
     pub(crate) fn new(mock_env: MockEnv, name: String, address: Address) -> Self {
-        Self { mock_env, name, address }
+        Self {
+            mock_env,
+            name,
+            address,
+        }
     }
 
     /// Returns the account's name.
@@ -99,10 +103,10 @@ impl<'env> AccountBuilder<'env> {
     /// Builds the account, registering it in the environment and funding it.
     pub fn build(self) -> AccountHandle {
         // 1. Create a mock auth contract for the account (represented as an address)
-        let address = self.env.inner().register_contract(
-            None,
-            soroban_sdk::testutils::MockAuthContract {},
-        );
+        let address = self
+            .env
+            .inner()
+            .register_contract(None, soroban_sdk::testutils::MockAuthContract {});
 
         // 2. Fund XLM if requested
         if self.xlm_balance.as_stroops() > 0 {
@@ -118,7 +122,7 @@ impl<'env> AccountBuilder<'env> {
         // 4. Register in MockEnv
         self.env.register_account(&self.name, address.clone());
 
-                AccountHandle::new(self.env.clone(), self.name, address)
+        AccountHandle::new(self.env.clone(), self.name, address)
     }
 }
 
@@ -152,7 +156,7 @@ mod tests {
         let bob = env.account("bob");
         let xlm = MockToken::xlm(&env);
 
-                // Perform transfer using the addresses
+        // Perform transfer using the addresses
         xlm.transfer(&*alice, &*bob, 20_000_000);
 
         assert_eq!(alice.xlm_balance(), 980_000_000);
@@ -163,7 +167,7 @@ mod tests {
     fn test_account_builder_fluent() {
         let env = MockEnv::builder().build();
         let usdc = MockToken::new(&env, "USDC", 6);
-        
+
         let charlie = AccountBuilder::new(&env)
             .name("charlie")
             .fund_xlm(Stroops::xlm(10))
@@ -172,10 +176,9 @@ mod tests {
 
         assert_eq!(charlie.xlm_balance(), Stroops::xlm(10).as_stroops());
         assert_eq!(charlie.token_balance(&usdc), 1000);
-        
+
         // Should be retrievable from env
         let charlie_ref = env.account("charlie");
         assert_eq!(charlie_ref.address(), charlie.address());
     }
 }
-

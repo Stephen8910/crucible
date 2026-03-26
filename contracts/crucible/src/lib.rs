@@ -5,6 +5,7 @@ pub mod env;
 pub mod fixture;
 pub mod macros;
 pub mod prelude;
+pub mod sim;
 pub mod token;
 
 /// The `#[fixture]` attribute macro for defining reusable test setup structs.

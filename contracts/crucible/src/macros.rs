@@ -130,7 +130,9 @@ macro_rules! assert_not_emitted {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use soroban_sdk::{contract, contractimpl, symbol_short, testutils::Address as _, Address, Env};
+    use soroban_sdk::{
+        contract, contractimpl, symbol_short, testutils::Address as _, Address, Env,
+    };
 
     #[contract]
     #[derive(Default, Debug)]
@@ -142,16 +144,16 @@ mod tests {
             env.events().publish((symbol_short!("test"),), value);
         }
         pub fn fire_multi(env: Env, value: u32) {
-            env.events().publish((symbol_short!("v1"), symbol_short!("data")), value);
-            env.events().publish((symbol_short!("v1"), symbol_short!("data")), value + 1);
+            env.events()
+                .publish((symbol_short!("v1"), symbol_short!("data")), value);
+            env.events()
+                .publish((symbol_short!("v1"), symbol_short!("data")), value + 1);
         }
     }
 
     #[test]
     fn test_macro_emitted_success() {
-        let env = MockEnv::builder()
-            .with_contract::<TestContract>()
-            .build();
+        let env = MockEnv::builder().with_contract::<TestContract>().build();
         let contract_id = env.contract_id::<TestContract>();
         let client = TestContractClient::new(env.inner(), &contract_id);
 
@@ -166,9 +168,7 @@ mod tests {
 
     #[test]
     fn test_macro_multi_success() {
-        let env = MockEnv::builder()
-            .with_contract::<TestContract>()
-            .build();
+        let env = MockEnv::builder().with_contract::<TestContract>().build();
         let contract_id = env.contract_id::<TestContract>();
         let client = TestContractClient::new(env.inner(), &contract_id);
 
@@ -181,9 +181,7 @@ mod tests {
 
     #[test]
     fn test_macro_not_emitted_success() {
-        let env = MockEnv::builder()
-            .with_contract::<TestContract>()
-            .build();
+        let env = MockEnv::builder().with_contract::<TestContract>().build();
         let contract_id = env.contract_id::<TestContract>();
         let client = TestContractClient::new(env.inner(), &contract_id);
 
@@ -196,9 +194,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Expected 2 events matching topics (Symbol(test),)")]
     fn test_macro_panic_wrong_count() {
-        let env = MockEnv::builder()
-            .with_contract::<TestContract>()
-            .build();
+        let env = MockEnv::builder().with_contract::<TestContract>().build();
         let contract_id = env.contract_id::<TestContract>();
         let client = TestContractClient::new(env.inner(), &contract_id);
 
@@ -210,9 +206,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "No event matching topics (Symbol(test),) had data 43")]
     fn test_macro_panic_wrong_data() {
-        let env = MockEnv::builder()
-            .with_contract::<TestContract>()
-            .build();
+        let env = MockEnv::builder().with_contract::<TestContract>().build();
         let contract_id = env.contract_id::<TestContract>();
         let client = TestContractClient::new(env.inner(), &contract_id);
 
@@ -221,4 +215,3 @@ mod tests {
         assert_emitted!(env, topics: (symbol_short!("test"),), data: 43_u32);
     }
 }
-
