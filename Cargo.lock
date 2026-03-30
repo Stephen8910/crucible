@@ -182,6 +182,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-example-counter"
+version = "0.1.0"
+dependencies = [
+ "crucible",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "crucible-example-escrow"
+version = "0.1.0"
+dependencies = [
+ "crucible",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "crucible-example-token"
+version = "0.1.0"
+dependencies = [
+ "crucible",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "crucible-example-vesting"
+version = "0.1.0"
+dependencies = [
+ "crucible",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "crucible-macros"
 version = "0.1.0"
 dependencies = [

@@ -2,6 +2,10 @@
 members = [
     "contracts/crucible",
     "crucible-macros",
+    "examples/counter",
+    "examples/token",
+    "examples/escrow",
+    "examples/vesting",
 ]
 resolver = "2"
 

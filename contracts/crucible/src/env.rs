@@ -367,6 +367,32 @@ impl Default for MockEnv {
     }
 }
 
+impl std::fmt::Debug for MockEnv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MockEnv")
+            .field(
+                "accounts",
+                &self
+                    .accounts
+                    .borrow()
+                    .keys()
+                    .cloned()
+                    .collect::<std::vec::Vec<_>>(),
+            )
+            .field(
+                "contract_ids",
+                &self
+                    .contract_ids
+                    .borrow()
+                    .keys()
+                    .cloned()
+                    .collect::<std::vec::Vec<_>>(),
+            )
+            .field("track_costs", &self.track_costs)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Builder for constructing a `MockEnv` with custom configuration.
 pub struct MockEnvBuilder {
     env: MockEnv,

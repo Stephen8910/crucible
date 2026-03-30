@@ -587,6 +587,22 @@ env.set_sequence(n: u32);
 
 ## Examples
 
+The [`examples/`](examples/) directory contains fully-runnable contracts and test
+suites covering every crucible feature. Run them all from the repo root:
+
+```bash
+cargo test --workspace
+```
+
+| Example | Contract | Tests |
+|---------|----------|-------|
+| **Counter** | [`examples/counter/src/lib.rs`](examples/counter/src/lib.rs) | [`examples/counter/src/test.rs`](examples/counter/src/test.rs) |
+| **Token** | [`examples/token/src/lib.rs`](examples/token/src/lib.rs) | [`examples/token/src/test.rs`](examples/token/src/test.rs) |
+| **Escrow** | [`examples/escrow/src/lib.rs`](examples/escrow/src/lib.rs) | [`examples/escrow/src/test.rs`](examples/escrow/src/test.rs) |
+| **Vesting** | [`examples/vesting/src/lib.rs`](examples/vesting/src/lib.rs) | [`examples/vesting/src/test.rs`](examples/vesting/src/test.rs) |
+
+---
+
 ### Testing a Token Contract
 
 ```rust

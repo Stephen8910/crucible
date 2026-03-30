@@ -13,9 +13,18 @@ use soroban_sdk::{
 ///
 /// This provides a convenient way to create and manipulate tokens in tests
 /// without needing to deploy actual token WASM contracts.
+#[derive(Clone)]
 pub struct MockToken {
     env: Env,
     address: Address,
+}
+
+impl std::fmt::Debug for MockToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MockToken")
+            .field("address", &self.address)
+            .finish_non_exhaustive()
+    }
 }
 
 impl MockToken {
