@@ -1,9 +1,15 @@
 use backend::{
     telemetry::init_telemetry, 
     config::Config,
-    jobs::{monitor_transaction, TransactionMonitorJob}
+    jobs::{monitor_transaction, TransactionMonitorJob},
+    api::handlers::{profiling, stellar},
+    services::{
+        sys_metrics::MetricsExporter,
+        error_recovery::ErrorManager,
+        log_aggregator::LogAggregator,
+    },
 };
-use axum::{routing::get, Router};
+use axum::{routing::{get, post}, Router};
 use std::net::SocketAddr;
 use tower_http::{
     trace::TraceLayer,
@@ -12,11 +18,12 @@ use tower_http::{
 use tokio::signal;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-use backend::api::handlers::{profiling, stellar};
+use profiling::AppState;
 use apalis::prelude::*;
 use apalis_redis::RedisStorage;
 use sqlx::postgres::PgPoolOptions;
 use redis::aio::ConnectionManager;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -34,15 +41,30 @@ async fn main() -> Result<(), anyhow::Error> {
     
     tracing::info!("Database migrations synchronized");
 
+    // Initialize services
+    let metrics_exporter = Arc::new(MetricsExporter::new());
+    let error_manager = Arc::new(ErrorManager::new());
+    let (_log_aggregator, log_receiver) = LogAggregator::new();
+
+    // Spawn background workers for new services
+    tokio::spawn(MetricsExporter::run_collector(metrics_exporter.clone()));
+    tokio::spawn(LogAggregator::run_worker(log_receiver));
+
     // Redis Job Queue setup
-    // Apalis 0.6.4 RedisStorage requires a ConnectionManager
-    let redis_client = redis::Client::open(config.redis_url)?;
+    let redis_client = redis::Client::open(config.redis_url.clone())?;
     let conn = ConnectionManager::new(redis_client).await?;
     let storage: RedisStorage<TransactionMonitorJob> = RedisStorage::new(conn);
     
     let worker = WorkerBuilder::new("monitor-worker")
         .backend(storage)
         .build_fn(monitor_transaction);
+
+    // Create shared state
+    let state = Arc::new(AppState {
+        db: db_pool,
+        metrics_exporter,
+        error_manager,
+    });
 
     // Define OpenAPI documentation
     #[derive(OpenApi)]
@@ -62,7 +84,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Configure CORS
     let cors = CorsLayer::new()
-        .allow_origin(Any) // In production, replace with specific origins
+        .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
@@ -75,10 +97,13 @@ async fn main() -> Result<(), anyhow::Error> {
             .route("/health", get(profiling::get_health))
             .route("/prometheus", get(profiling::get_prometheus_metrics))
         )
+        // Add routes from origin/main
+        .route("/api/status", get(profiling::get_system_status))
+        .route("/api/profile", post(profiling::trigger_profile_collection))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
-        .with_state(db_pool);
+        .with_state(state);
 
     // Run it with graceful shutdown and background workers
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
@@ -127,3 +152,4 @@ async fn shutdown_signal() {
         },
     }
 }
+

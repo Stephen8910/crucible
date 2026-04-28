@@ -1,9 +1,20 @@
-use axum::{Json, response::IntoResponse};
+use axum::{Json, response::IntoResponse, extract::State};
 use serde::{Serialize, Deserialize};
 use tracing::{info, instrument};
 use chrono::{DateTime, Utc};
 use crate::error::AppError;
 use utoipa::ToSchema;
+use std::sync::Arc;
+use crate::services::{
+    sys_metrics::MetricsExporter,
+    error_recovery::ErrorManager,
+};
+
+pub struct AppState {
+    pub db: sqlx::PgPool,
+    pub metrics_exporter: Arc<MetricsExporter>,
+    pub error_manager: Arc<ErrorManager>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct MetricsReport {
@@ -45,12 +56,16 @@ pub struct HealthResponse {
     tag = "profiling"
 )]
 #[instrument(skip_all)]
-pub async fn get_metrics() -> Result<impl IntoResponse, AppError> {
+pub async fn get_metrics(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
     info!("Collecting performance metrics");
     
+    let sys_metrics = state.metrics_exporter.get_metrics().await;
+    
     let report = MetricsReport {
-        uptime_secs: 3600,
-        memory_usage_bytes: 157_286_400,
+        uptime_secs: sys_metrics.uptime,
+        memory_usage_bytes: sys_metrics.memory_usage,
         active_requests: 12,
         error_rate: 0.001,
         ledger_ingestion_latency_ms: 120,
@@ -71,7 +86,9 @@ pub async fn get_metrics() -> Result<impl IntoResponse, AppError> {
     tag = "profiling"
 )]
 #[instrument(skip_all)]
-pub async fn get_health() -> Result<impl IntoResponse, AppError> {
+pub async fn get_health(
+    State(_state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
     info!("Performing system health check");
     
     let response = HealthResponse {
@@ -94,4 +111,27 @@ pub async fn get_prometheus_metrics() -> impl IntoResponse {
                    # HELP backend_ledger_latency_ms Current ledger ingestion latency\n\
                    # TYPE backend_ledger_latency_ms gauge\n\
                    backend_ledger_latency_ms 120\n".to_string()
+}
+
+pub async fn get_system_status(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let metrics = state.metrics_exporter.get_metrics().await;
+    let recovery_tasks = state.error_manager.get_active_tasks().await;
+
+    Json(serde_json::json!({
+        "status": "healthy",
+        "metrics": metrics,
+        "active_recovery_tasks": recovery_tasks,
+    }))
+}
+
+pub async fn trigger_profile_collection(
+    State(_state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    // In a real implementation, this would trigger a CPU/Memory profile
+    Json(serde_json::json!({
+        "message": "Profiling collection triggered",
+        "profile_id": uuid::Uuid::new_v4().to_string(),
+    }))
 }

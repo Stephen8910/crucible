@@ -1,0 +1,94 @@
+#![allow(dead_code)]
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{error, info, warn};
+use thiserror::Error;
+use serde::{Serialize, Deserialize};
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum RecoveryError {
+    #[error("Database error: {0}")]
+    Database(String),
+    #[error("Redis error: {0}")]
+    Redis(String),
+    #[error("Internal service error: {0}")]
+    Internal(String),
+    #[error("Max retries reached for task: {0}")]
+    MaxRetriesReached(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryTask {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub retries: u32,
+    pub max_retries: u32,
+}
+
+pub struct ErrorManager {
+    tasks: Arc<RwLock<Vec<RecoveryTask>>>,
+}
+
+impl ErrorManager {
+    pub fn new() -> Self {
+        Self {
+            tasks: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    pub async fn handle_error(&self, error: RecoveryError, task_name: &str) -> Result<(), RecoveryError> {
+        warn!(task = %task_name, error = %error, "Handling error");
+
+        let mut tasks = self.tasks.write().await;
+        if let Some(task) = tasks.iter_mut().find(|t| t.name == task_name) {
+            task.retries += 1;
+            if task.retries > task.max_retries {
+                error!(task = %task_name, "Max retries reached");
+                return Err(RecoveryError::MaxRetriesReached(task_name.to_string()));
+            }
+            info!(task = %task_name, retry = task.retries, "Retrying task");
+        } else {
+            tasks.push(RecoveryTask {
+                id: uuid::Uuid::new_v4(),
+                name: task_name.to_string(),
+                retries: 1,
+                max_retries: 3,
+            });
+            info!(task = %task_name, "Registered new recovery task");
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_active_tasks(&self) -> Vec<RecoveryTask> {
+        self.tasks.read().await.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_error_recovery_workflow() {
+        let manager = ErrorManager::new();
+        let task_name = "test_task";
+
+        // First failure
+        manager.handle_error(RecoveryError::Database("connection lost".to_string()), task_name).await.unwrap();
+        assert_eq!(manager.get_active_tasks().await.len(), 1);
+        assert_eq!(manager.get_active_tasks().await[0].retries, 1);
+
+        // Second failure
+        manager.handle_error(RecoveryError::Redis("timeout".to_string()), task_name).await.unwrap();
+        assert_eq!(manager.get_active_tasks().await[0].retries, 2);
+
+        // Third failure
+        manager.handle_error(RecoveryError::Internal("unknown".to_string()), task_name).await.unwrap();
+        assert_eq!(manager.get_active_tasks().await[0].retries, 3);
+
+        // Fourth failure - should fail
+        let result = manager.handle_error(RecoveryError::Internal("last straw".to_string()), task_name).await;
+        assert!(matches!(result, Err(RecoveryError::MaxRetriesReached(_))));
+    }
+}
