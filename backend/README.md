@@ -23,6 +23,7 @@ This is the backend service layer for the Crucible project.
 | `log_aggregator` | Async MPSC-based log pipeline; persists entries via a background worker |
 | `log_alerts` | Threshold-based alerting over the log pipeline with sliding-window evaluation |
 | `feature_flags` | Feature flag management backed by PostgreSQL with Redis caching |
+| `test_coverage` | Code coverage tracking and caching for CI integration |
 
 ### Database (`src/db/`)
 
@@ -36,6 +37,8 @@ This is the backend service layer for the Crucible project.
 |---|---|---|
 | `GET` | `/api/status` | System health, metrics, and active recovery tasks |
 | `POST` | `/api/profile` | Trigger a profiling collection run |
+| `POST` | `/api/coverage` | Submit a new code coverage report |
+| `GET` | `/api/coverage/:project` | Get latest coverage report for a specific project |
 
 ## Running
 ```bash
