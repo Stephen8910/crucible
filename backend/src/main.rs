@@ -1,5 +1,6 @@
 mod api;
 mod services;
+mod config;
 
 use std::sync::Arc;
 use axum::{
@@ -13,6 +14,7 @@ use crate::services::{
     error_recovery::ErrorManager,
     log_aggregator::LogAggregator,
 };
+use crate::config::{AppConfig, reload::{ConfigManager, handle_reload, handle_get_config}};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,16 +33,23 @@ async fn main() -> anyhow::Result<()> {
     // Spawn background workers
     tokio::spawn(MetricsExporter::run_collector(metrics_exporter.clone()));
     tokio::spawn(LogAggregator::run_worker(log_receiver));
+    
+    // Initialize config manager
+    let config = AppConfig::default();
+    let config_manager = Arc::new(ConfigManager::new(config));
 
     let state = Arc::new(AppState {
         metrics_exporter,
         error_manager,
+        config_manager: config_manager.clone(),
     });
 
     // Build router
     let app = Router::new()
         .route("/api/status", get(get_system_status))
         .route("/api/profile", post(trigger_profile_collection))
+        .route("/api/config", get(handle_get_config))
+        .route("/api/config/reload", post(handle_reload))
         .with_state(state);
 
     // Run server

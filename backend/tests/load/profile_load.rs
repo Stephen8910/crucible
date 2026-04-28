@@ -7,11 +7,13 @@ use tower::ServiceExt;
 
 use backend::api::handlers::profiling::{AppState, trigger_profile_collection};
 use backend::services::{error_recovery::ErrorManager, sys_metrics::MetricsExporter};
+use backend::config::{AppConfig, reload::ConfigManager};
 
 fn build_app() -> Router {
     let state = Arc::new(AppState {
         metrics_exporter: Arc::new(MetricsExporter::new()),
         error_manager: Arc::new(ErrorManager::new()),
+        config_manager: Arc::new(ConfigManager::new(AppConfig::default())),
     });
     Router::new()
         .route("/api/profile", post(trigger_profile_collection))

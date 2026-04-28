@@ -19,9 +19,11 @@ async fn test_get_status_endpoint() {
     let metrics_exporter = Arc::new(MetricsExporter::new());
     let error_manager = Arc::new(ErrorManager::new());
 
+    let config_manager = Arc::new(backend::config::reload::ConfigManager::new(backend::config::AppConfig::default()));
     let state = Arc::new(AppState {
         metrics_exporter,
         error_manager,
+        config_manager,
     });
 
     let app = Router::new()

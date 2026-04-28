@@ -16,6 +16,7 @@ thiserror = "1.0"
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
+arc-swap = "1.7"
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }

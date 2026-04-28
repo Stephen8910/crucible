@@ -9,10 +9,12 @@ use crate::services::{
     sys_metrics::MetricsExporter,
     error_recovery::ErrorManager,
 };
+use crate::config::reload::ConfigManager;
 
 pub struct AppState {
     pub metrics_exporter: Arc<MetricsExporter>,
     pub error_manager: Arc<ErrorManager>,
+    pub config_manager: Arc<ConfigManager>,
 }
 
 pub async fn get_system_status(
