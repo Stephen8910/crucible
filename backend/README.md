@@ -21,7 +21,7 @@ The backend runs several background workers for system health and data consisten
 
 | Module | Description |
 |---|---|
-| `sys_metrics` | Collects and exposes system metrics (CPU, memory, uptime) |
+| `sys_metrics` | Build system metrics exporter with PostgreSQL persistence and Redis caching (compilation times, dependency counts, cache hit rates) |
 | `error_recovery` | Tracks retry state for failing tasks with configurable max retries |
 | `log_aggregator` | Async MPSC-based log pipeline; persists entries via a background worker |
 | `log_alerts` | Threshold-based alerting over the log pipeline with sliding-window evaluation |
@@ -62,7 +62,67 @@ cargo test -p backend
 
 # Load tests specifically
 cargo test -p backend --test load_tests -- --nocapture
+
+# Build metrics integration tests (requires PostgreSQL and Redis)
+cargo test -p backend --test build_metrics_tests -- --ignored
 ```
+
+## Build System Metrics Exporter
+
+The `sys_metrics` module provides a production-ready build system metrics exporter that tracks and analyzes build performance across projects.
+
+### Features
+
+- **Build Tracking**: Record compilation times, dependency counts, and resource usage
+- **Status Monitoring**: Track build success/failure/cancellation rates
+- **Cache Analytics**: Monitor cache hit rates to optimize build performance
+- **Resource Metrics**: Track CPU and memory usage during builds
+- **PostgreSQL Persistence**: Durable storage for historical metrics
+- **Redis Caching**: High-performance caching with automatic invalidation
+- **Aggregated Summaries**: Get project-level statistics and success rates
+
+### Usage Example
+
+```rust
+use backend::services::sys_metrics::{BuildMetricsService, BuildMetric, BuildStatus};
+use sqlx::PgPool;
+use redis::Client;
+
+let service = BuildMetricsService::new(pool, redis);
+
+// Record a build metric
+let metric = BuildMetric {
+    id: None,
+    project_name: "crucible".to_string(),
+    build_id: "build-123".to_string(),
+    build_status: BuildStatus::Success,
+    compilation_time_ms: 5000,
+    dependency_count: 42,
+    cache_hit_rate: Some(85.5),
+    cpu_usage: Some(75.2),
+    memory_usage_mb: Some(1024),
+    build_timestamp: Utc::now(),
+};
+service.record_build(metric).await?;
+
+// Get project metrics with caching
+let metrics = service.get_project_metrics("crucible", 10).await?;
+
+// Get aggregated summary
+let summary = service.get_project_summary("crucible").await?;
+println!("Success rate: {}%", summary.success_rate);
+```
+
+### API Reference
+
+#### BuildMetricsService
+
+- `new(db, redis)` - Create a new metrics service
+- `record_build(metric)` - Record a build metric (invalidates cache)
+- `get_project_metrics(project_name, limit)` - Get metrics for a project (with caching)
+- `get_project_summary(project_name)` - Get aggregated statistics
+- `get_recent_metrics(limit)` - Get recent builds across all projects
+- `delete_project_metrics(project_name)` - Delete all metrics for a project
 
 ## Structure
 - `src/api/` – API handlers and routing
