@@ -45,3 +45,7 @@ mime = "0.3"
 name = "performance"
 harness = false
 
+[[bench]]
+name = "dashboard_bench"
+harness = false
+
