@@ -209,10 +209,10 @@ impl AlertDispatcher {
         };
 
         // --- update deduplication timestamp ---
-        self.last_dispatched
-            .write()
-            .await
-            .insert(envelope.notification.alert_key.clone(), envelope.dispatched_at);
+        self.last_dispatched.write().await.insert(
+            envelope.notification.alert_key.clone(),
+            envelope.dispatched_at,
+        );
 
         // --- in-memory queue ---
         self.queue.write().await.push(envelope.clone());
@@ -230,8 +230,7 @@ impl AlertDispatcher {
             let payload = serde_json::to_string(&envelope)?;
             match redis.get_multiplexed_async_connection().await {
                 Ok(mut conn) => {
-                    let result: Result<i64, _> =
-                        conn.publish(&self.redis_channel, &payload).await;
+                    let result: Result<i64, _> = conn.publish(&self.redis_channel, &payload).await;
                     match result {
                         Ok(receivers) => {
                             debug!(

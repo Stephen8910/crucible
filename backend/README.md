@@ -1,28 +1,52 @@
 # Crucible Backend
 
-This is the backend service layer for the Crucible project.
+This is the backend service layer for the Crucible toolkit, providing performance profiling, mock service layers, specialized serialization utilities, and robust background monitoring.
 
-## Technologies
-- **Axum**: Web framework
-- **Tokio**: Async runtime
-- **SQLx**: PostgreSQL driver (with `uuid` and `chrono` support)
-- **Redis**: Caching and job queues
-- **Tracing**: Observability
+## Features
+
+### 🚀 Performance Profiling API
+High-performance endpoints for monitoring application health and system metrics.
+- `/api/v1/profiling/metrics`: Real-time system metrics.
+- `/api/v1/profiling/health`: System health status.
+- `/api/status`: Unified health, metrics, and active recovery tasks.
+
+### 🧪 Mock Service Layer
+A robust mock layer for testing services in isolation, supporting both database and cache operations.
+
+### 🔢 Custom Serialization
+Specialized Serde serializers for high-precision types and Stellar-specific formats.
+
+### 🛠️ Background Services
+The backend runs several background workers for system health and data consistency.
+
+## Tech Stack
+- **Web Framework**: Axum (async Rust)
+- **Runtime**: Tokio
+- **Database**: PostgreSQL (via SQLx 0.8)
+- **Caching & Jobs**: Redis (via Apalis)
+- **Serialization**: Serde
+- **Observability**: Tracing + OpenTelemetry (OTLP)
+- **API Documentation**: Utoipa (Swagger UI)
 
 ## Structure
 - `src/api/` – API handlers and routing
-- `src/config/` – Application configuration and hot-reload
+- `src/config/` – Environment configuration and hot-reload
 - `src/db/` – Database utilities and seed data
+- `src/jobs/` – Background job definitions (Apalis)
 - `src/services/` – Business logic and external integrations
+- `src/telemetry/` – Observability and logging setup
+- `src/utils/` – Serialization, validation, XDR helpers
+- `src/test_utils/` – Mock traits for unit testing
 
 ### API Handlers (`src/api/handlers/`)
 
 | Module | Description |
 |---|---|
-| `profiling` | System status and profiling trigger endpoints |
+| `profiling` | System status, metrics, health, and profiling trigger endpoints |
 | `dashboard` | Aggregated dashboard data endpoint with Redis caching |
+| `stellar` | Stellar SEP-1 `.well-known/stellar.toml` endpoint |
 
-
+### Services (`src/services/`)
 
 | Module | Description |
 |---|---|
@@ -44,9 +68,15 @@ This is the backend service layer for the Crucible project.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/status` | System health, metrics, and active recovery tasks |
-| `POST` | `/api/profile` | Trigger a profiling collection run |
+| `GET` | `/` | Base API greeting |
+| `GET` | `/.well-known/stellar.toml` | Stellar network metadata (SEP-1) |
+| `GET` | `/api/v1/profiling/metrics` | Detailed performance metrics (OpenAPI) |
+| `GET` | `/api/v1/profiling/health` | Service health check (OpenAPI) |
+| `GET` | `/api/v1/profiling/prometheus` | Prometheus-compatible metrics |
+| `GET` | `/api/status` | System health summary and recovery status |
+| `POST` | `/api/profile` | Trigger a manual profiling collection run |
 | `GET` | `/api/dashboard` | Aggregated dashboard data: metrics, recovery tasks, and active alerts (Redis-cached, 30 s TTL) |
+| `GET` | `/swagger-ui` | Interactive API documentation |
 
 ## Running
 ```bash
@@ -90,14 +120,6 @@ redis-cli SET config:current '{"log_level":"info","max_connections":50,"request_
 redis-cli PUBLISH config:reload reload
 ```
 
-| Field | Default | Description |
-|---|---|---|
-| `log_level` | `backend=debug` | Tracing filter directive |
-| `max_connections` | `10` | DB pool size |
-| `request_timeout_secs` | `30` | HTTP request timeout |
-| `maintenance_mode` | `false` | Maintenance banner flag |
-| `redis_config_key` | `config:current` | Redis key for config JSON |
-
 ## Critical Error Alerting
 
 `AlertDispatcher` sits on top of `log_alerts` and dispatches notifications when a critical condition fires. It deduplicates within a configurable cooldown window and publishes to Redis pub/sub.
@@ -126,7 +148,7 @@ let pending = dispatcher.drain_notifications().await;
 
 Redis pub/sub channel defaults to `alerts:critical`; override with `.with_channel("my-channel")`.
 
-
+## OpenTelemetry Tracing
 
 Spans from every `#[tracing::instrument]`-annotated function are exported to an OTLP-compatible collector over HTTP/protobuf.
 
@@ -150,7 +172,7 @@ docker run -d -p4317:4317 -p4318:4318 -p16686:16686 jaegertracing/all-in-one:lat
 # View traces at http://localhost:16686
 ```
 
-
+## Feature Flags
 
 Feature flags are stored in PostgreSQL and cached in Redis with a 5-minute TTL.
 
@@ -164,28 +186,6 @@ if service.is_enabled("new_dashboard").await? {
 
 // Create / update a flag
 service.set("new_dashboard", true, "Enable redesigned dashboard").await?;
-```
-
-## Log Alerts
-
-Alert rules evaluate incoming log entries against a pattern within a sliding time window.
-
-```rust
-let manager = AlertManager::new();
-manager.add_rule(AlertRule {
-    id: Uuid::new_v4(),
-    name: "High error rate".to_string(),
-    pattern: "ERROR".to_string(),
-    severity: AlertSeverity::Critical,
-    threshold: 5,
-    window_secs: 60,
-}).await?;
-
-// Evaluate a log entry
-manager.evaluate(&log_entry).await;
-
-// Retrieve fired alerts
-let alerts = manager.get_active_alerts().await;
 ```
 
 ## Database Seeds

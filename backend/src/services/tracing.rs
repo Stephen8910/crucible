@@ -144,11 +144,11 @@ pub fn init(cfg: TracingConfig) -> Result<TracingGuard, TracingError> {
     // Register as the global provider so `global::tracer()` works anywhere.
     global::set_tracer_provider(provider.clone());
 
-    let otel_layer = tracing_opentelemetry::layer()
-        .with_tracer(provider.tracer(cfg.service_name.clone()));
+    let otel_layer =
+        tracing_opentelemetry::layer().with_tracer(provider.tracer(cfg.service_name.clone()));
 
-    let filter = EnvFilter::try_new(&cfg.log_filter)
-        .unwrap_or_else(|_| EnvFilter::new("backend=debug"));
+    let filter =
+        EnvFilter::try_new(&cfg.log_filter).unwrap_or_else(|_| EnvFilter::new("backend=debug"));
 
     tracing_subscriber::registry()
         .with(filter)

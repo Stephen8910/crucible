@@ -220,6 +220,8 @@ impl ConfigWatcher {
         tokio::spawn(async move {
             const CHANNEL: &str = "config:reload";
 
+            // get_async_connection is the only way to obtain a PubSub-capable connection.
+            #[allow(deprecated)]
             let conn = match redis.get_async_connection().await {
                 Ok(c) => c,
                 Err(e) => {
@@ -234,7 +236,10 @@ impl ConfigWatcher {
                 return;
             }
 
-            info!(channel = CHANNEL, "Config watcher: listening for reload signals");
+            info!(
+                channel = CHANNEL,
+                "Config watcher: listening for reload signals"
+            );
 
             let mut stream = pubsub.into_on_message();
             use futures_util::StreamExt;

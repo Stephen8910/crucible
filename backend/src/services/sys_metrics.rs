@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
 use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -54,7 +54,9 @@ impl MetricsExporter {
             interval.tick().await;
             let uptime = (Utc::now() - start_time).num_seconds() as u64;
             // Simulated metrics collection
-            exporter.update_metrics(12.5, 1024 * 1024 * 512, uptime).await;
+            exporter
+                .update_metrics(12.5, 1024 * 1024 * 512, uptime)
+                .await;
         }
     }
 }
@@ -67,7 +69,7 @@ mod tests {
     async fn test_metrics_collection() {
         let exporter = MetricsExporter::new();
         exporter.update_metrics(25.0, 1024, 60).await;
-        
+
         let metrics = exporter.get_metrics().await;
         assert_eq!(metrics.cpu_usage, 25.0);
         assert_eq!(metrics.memory_usage, 1024);

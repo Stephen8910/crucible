@@ -24,12 +24,12 @@
 
 #![allow(dead_code)]
 
+use chrono::{DateTime, Utc};
+use redis::{AsyncCommands, Client as RedisClient};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use redis::{Client as RedisClient, AsyncCommands};
 use thiserror::Error;
 use tracing::{debug, info, warn};
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -113,12 +113,11 @@ impl FeatureFlagService {
 
         // Cache miss – query database
         debug!(key = %key, "Feature flag cache miss – querying database");
-        let row: Option<(bool,)> = sqlx::query_as(
-            "SELECT enabled FROM feature_flags WHERE key = $1"
-        )
-        .bind(key)
-        .fetch_optional(&self.db)
-        .await?;
+        let row: Option<(bool,)> =
+            sqlx::query_as("SELECT enabled FROM feature_flags WHERE key = $1")
+                .bind(key)
+                .fetch_optional(&self.db)
+                .await?;
 
         match row {
             Some((enabled,)) => {
@@ -138,7 +137,7 @@ impl FeatureFlagService {
     /// Returns [`FlagError::NotFound`] if the flag doesn't exist.
     pub async fn get(&self, key: &str) -> Result<FeatureFlag, FlagError> {
         let row: Option<(String, bool, String, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT key, enabled, description, updated_at FROM feature_flags WHERE key = $1"
+            "SELECT key, enabled, description, updated_at FROM feature_flags WHERE key = $1",
         )
         .bind(key)
         .fetch_optional(&self.db)
@@ -158,7 +157,7 @@ impl FeatureFlagService {
     /// List all feature flags.
     pub async fn list(&self) -> Result<Vec<FeatureFlag>, FlagError> {
         let rows: Vec<(String, bool, String, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT key, enabled, description, updated_at FROM feature_flags ORDER BY key"
+            "SELECT key, enabled, description, updated_at FROM feature_flags ORDER BY key",
         )
         .fetch_all(&self.db)
         .await?;
@@ -177,12 +176,7 @@ impl FeatureFlagService {
     /// Create or update a feature flag.
     ///
     /// This method upserts the flag in PostgreSQL and invalidates the cache.
-    pub async fn set(
-        &self,
-        key: &str,
-        enabled: bool,
-        description: &str,
-    ) -> Result<(), FlagError> {
+    pub async fn set(&self, key: &str, enabled: bool, description: &str) -> Result<(), FlagError> {
         sqlx::query(
             r#"
             INSERT INTO feature_flags (key, enabled, description, updated_at)

@@ -1,9 +1,9 @@
 #![allow(dead_code)]
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
-use thiserror::Error;
-use serde::{Serialize, Deserialize};
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum RecoveryError {
@@ -42,7 +42,11 @@ impl ErrorManager {
         }
     }
 
-    pub async fn handle_error(&self, error: RecoveryError, task_name: &str) -> Result<(), RecoveryError> {
+    pub async fn handle_error(
+        &self,
+        error: RecoveryError,
+        task_name: &str,
+    ) -> Result<(), RecoveryError> {
         warn!(task = %task_name, error = %error, "Handling error");
 
         let mut tasks = self.tasks.write().await;
@@ -81,20 +85,34 @@ mod tests {
         let task_name = "test_task";
 
         // First failure
-        manager.handle_error(RecoveryError::Database("connection lost".to_string()), task_name).await.unwrap();
+        manager
+            .handle_error(
+                RecoveryError::Database("connection lost".to_string()),
+                task_name,
+            )
+            .await
+            .unwrap();
         assert_eq!(manager.get_active_tasks().await.len(), 1);
         assert_eq!(manager.get_active_tasks().await[0].retries, 1);
 
         // Second failure
-        manager.handle_error(RecoveryError::Redis("timeout".to_string()), task_name).await.unwrap();
+        manager
+            .handle_error(RecoveryError::Redis("timeout".to_string()), task_name)
+            .await
+            .unwrap();
         assert_eq!(manager.get_active_tasks().await[0].retries, 2);
 
         // Third failure
-        manager.handle_error(RecoveryError::Internal("unknown".to_string()), task_name).await.unwrap();
+        manager
+            .handle_error(RecoveryError::Internal("unknown".to_string()), task_name)
+            .await
+            .unwrap();
         assert_eq!(manager.get_active_tasks().await[0].retries, 3);
 
         // Fourth failure - should fail
-        let result = manager.handle_error(RecoveryError::Internal("last straw".to_string()), task_name).await;
+        let result = manager
+            .handle_error(RecoveryError::Internal("last straw".to_string()), task_name)
+            .await;
         assert!(matches!(result, Err(RecoveryError::MaxRetriesReached(_))));
     }
 }
