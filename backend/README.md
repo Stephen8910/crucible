@@ -1,176 +1,106 @@
-# Backend Service
+# Crucible Backend
 
-A production-ready backend service built with Rust, Axum, PostgreSQL, and Redis.
+This is the backend service layer for the Crucible toolkit, providing performance profiling, mock service layers, specialized serialization utilities, and robust background monitoring.
 
-## Overview
+## Features
 
-This is the backend API service for the application, providing:
-- RESTful HTTP APIs using Axum
-- PostgreSQL database operations via SQLx
-- Redis caching and job queues
-- Comprehensive error handling
-- Observability with tracing
+### 🚀 Performance Profiling API
+High-performance endpoints for monitoring application health and system metrics.
+- `/api/v1/profiling/metrics`: Real-time system metrics.
+- `/api/v1/profiling/health`: System health status.
+- `/api/status`: Unified health, metrics, and active recovery tasks.
+
+### 🧪 Mock Service Layer
+A robust mock layer for testing services in isolation, supporting both database and cache operations.
+
+### 🔢 Custom Serialization
+Specialized Serde serializers for high-precision types and Stellar-specific formats.
+
+### 🛠️ Background Services
+The backend runs several background workers for system health and data consistency.
+
+| Module | Description |
+|---|---|
+| `sys_metrics` | Collects and exposes system metrics (CPU, memory, uptime) |
+| `error_recovery` | Tracks retry state for failing tasks with configurable max retries |
+| `log_aggregator` | Async MPSC-based log pipeline; persists entries via a background worker |
+| `log_alerts` | Threshold-based alerting over the log pipeline with sliding-window evaluation |
+| `feature_flags` | Feature flag management backed by PostgreSQL with Redis caching |
 
 ## Tech Stack
-
-- **Runtime**: Tokio (async Rust)
-- **HTTP Framework**: Axum
-- **Database**: PostgreSQL with SQLx
-- **Cache/Queue**: Redis
+- **Web Framework**: Axum (async Rust)
+- **Runtime**: Tokio
+- **Database**: PostgreSQL (via SQLx 0.8)
+- **Caching & Jobs**: Redis (via Apalis)
+- **Serialization**: Serde
 - **Observability**: Tracing
-
-## Project Structure
-
-```
-backend/
-├── src/
-│   ├── main.rs           # Application entry point
-│   ├── lib.rs            # Library root
-│   ├── error.rs          # Error types
-│   └── test_utils/
-│       ├── factories.rs  # Factory module
-│       ├── user.rs       # User factory
-│       ├── order.rs      # Order factory
-│       ├── product.rs    # Product factory
-│       └── session.rs    # Session factory
-├── Cargo.toml
-└── README.md
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Rust 1.70+
-- PostgreSQL 14+
-- Redis 7+
-
-### Build
-
-```bash
-cd backend
-cargo build --release
-```
-
-### Run
-
-```bash
-cargo run --release
-```
-
-The server starts on `http://localhost:3000`.
+- **API Documentation**: Utoipa (Swagger UI)
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | API version info |
-| GET | `/health` | Health check |
-| GET | `/api/users` | List users |
-| POST | `/api/users` | Create user |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Base API greeting |
+| `GET` | `/.well-known/stellar.toml` | Stellar network metadata |
+| `GET` | `/api/v1/profiling/metrics` | Detailed performance metrics (OpenAPI) |
+| `GET` | `/api/v1/profiling/health` | Service health check (OpenAPI) |
+| `GET` | `/api/status` | System health summary and recovery status |
+| `POST` | `/api/profile` | Trigger a manual profiling collection run |
+| `GET` | `/swagger-ui` | Interactive API documentation |
+
+## Development
+
+### Running the App
+```bash
+cargo run -p backend
+```
+
+### Running Tests
+```bash
+# All tests (unit + integration)
+cargo test -p backend
+
+# Load tests specifically
+cargo test -p backend --test load_tests -- --nocapture
+```
+
 
 ## Test Utilities
 
-The `test_utils` module provides factory functions for creating domain objects in tests:
-
-### User Factory
+The `test_utils` module includes upstream mocks plus fixture factories for backend tests. The factory API creates consistent domain objects while allowing per-test customization.
 
 ```rust
-use backend::test_utils::factories::{create_user, create_user_with, create_users_with, build_user, UserFactory};
+use backend::test_utils::{build_order, build_product, build_session, build_user, OrderItem};
+use uuid::Uuid;
 
-// Create with defaults
-let user = create_user();
-
-// Create with customizations
-let user = create_user_with(|u| {
-    u.email = "test@example.com".to_string();
-});
-
-// Create many with incremental changes
-let users = create_users_with(5, |u, i| {
-    u.email = format!("user{}@example.com", i);
-});
-
-// Builder pattern
 let user = build_user()
     .email("user@example.com")
     .is_admin(true)
     .finish();
-```
-
-### Order Factory
-
-```rust
-use backend::test_utils::factories::{create_order, build_order, OrderItem};
-use uuid::Uuid;
-
-let order = build_order()
-    .user_id(user_id)
-    .add_item(OrderItem::new(
-        Uuid::new_v4(),
-        "Product".to_string(),
-        2,
-        1999,
-    ))
-    .finish();
-```
-
-### Product Factory
-
-```rust
-use backend::test_utils::factories::{create_product, build_product, ProductCategory};
 
 let product = build_product()
     .name("New Product")
     .price_cents(2999)
-    .category(ProductCategory::Electronics)
     .finish();
-```
 
-### Session Factory
-
-```rust
-use backend::test_utils::factories::{create_session, build_session};
+let order = build_order()
+    .user_id(user.id)
+    .add_item(OrderItem::new(product.id, product.name.clone(), 2, product.price_cents))
+    .finish();
 
 let session = build_session()
-    .user_id(user_id)
+    .user_id(user.id)
     .expires_in_days(30)
     .finish();
 ```
 
-## Error Handling
+Factory helpers are re-exported from `backend::test_utils`, including `create_user`, `create_order`, `create_product`, `create_session`, and their builder/customization variants.
 
-The module provides custom error types with HTTP status code mapping:
+## Structure
+- `src/api/` – API handlers and routing
+- `src/config/` – Environment configuration
+- `src/db/` – Database utilities and seed data
+- `src/jobs/` – Background job definitions (Apalis)
+- `src/services/` – Business logic and external integrations
+- `src/telemetry/` – Observability and logging setup
 
-```rust
-use backend::error::{Error, Result};
-
-fn example() -> Result<User> {
-    Err(Error::NotFound("User not found".to_string()))
-}
-```
-
-## Testing
-
-Run all tests:
-
-```bash
-cargo test
-```
-
-Run with output:
-
-```bash
-cargo test -- --nocapture
-```
-
-## Configuration
-
-Environment variables:
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
-- `LOG_LEVEL` - Logging level (default: debug)
-
-## License
-
-MIT
