@@ -103,7 +103,9 @@ async fn test_status_response_shape() {
     let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
 
-    assert!(json.get("status").is_some());
-    assert!(json.get("metrics").is_some());
-    assert!(json.get("active_recovery_tasks").is_some());
+    assert_eq!(json["status"], "success");
+    assert!(json.get("data").is_some());
+    assert!(json["data"].get("status").is_some());
+    assert!(json["data"].get("uptime_secs").is_some());
+    assert!(json["data"].get("active_recovery_tasks").is_some());
 }

@@ -581,6 +581,48 @@ pub struct AppConfig {
 1. Create a `config.json` in the root directory.
 2. Update values in the file.
 3. Call `POST /api/config/reload` to apply changes.
+
+## Type-Safe API Contracts
+
+Crucible uses a typed contract system for all API endpoints to ensure consistency and reliability.
+
+### Standard Response Envelope
+
+All successful API responses follow the standard envelope:
+
+```json
+{
+  "status": "success",
+  "data": { ... }
+}
+```
+
+### Error Handling
+
+Errors return a standardized error object with HTTP status codes:
+
+```json
+{
+  "error": "Human readable error message",
+  "code": "ERROR_CODE_STRING",
+  "details": null
+}
+```
+
+### Validation
+
+The `ValidatedJson<T>` extractor automatically validates incoming requests using the `Validate` trait.
+
+```rust
+impl Validate for ProfileTriggerRequest {
+    fn validate(&self) -> Result<(), String> {
+        if self.duration_secs == 0 {
+            return Err("duration_secs must be > 0".to_string());
+        }
+        Ok(())
+    }
+}
+```
 ## Structure
 - `src/api/` – API handlers and routing
 - `src/config/` – Environment configuration
