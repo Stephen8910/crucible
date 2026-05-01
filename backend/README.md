@@ -38,6 +38,7 @@ The backend runs several background workers for system health and data consisten
 
 ## Structure
 - `src/api/` – API handlers and routing
+- `src/bin/` – Standalone service binaries
 - `src/config/` – Environment configuration and hot-reload
 - `src/db/` – Database utilities and seed data
 - `src/jobs/` – Background job definitions (Apalis)
@@ -80,6 +81,12 @@ The backend runs several background workers for system health and data consisten
 |---|---|
 | `logging` | Captures request/response metadata, latency, and status codes; integrated with `tracing` and `log_aggregator` |
 
+### Binaries (`src/bin/`)
+
+| Binary | Description |
+|--------|-------------|
+| `backup` | Database backup and restore HTTP service + job enqueuer |
+
 ### Database (`src/db/`)
 
 | Module | Description |
@@ -101,6 +108,11 @@ The backend runs several background workers for system health and data consisten
 |---|---|---|
 | `GET` | `/api/status` | System health, metrics, and active recovery tasks |
 | `POST` | `/api/profile` | Trigger a profiling collection run |
+| `GET` | `/health` | Backup service liveness probe |
+| `POST` | `/backups` | Enqueue a new backup job |
+| `GET` | `/backups` | List all backup records |
+| `GET` | `/backups/:id` | Get a single backup record |
+| `POST` | `/backups/:id/restore` | Enqueue a restore job for a backup |
 | `POST` | `/api/coverage` | Submit a new code coverage report |
 | `GET` | `/api/coverage/:project` | Get latest coverage report for a specific project |
 | `GET` | `/` | Base API greeting |
@@ -436,6 +448,15 @@ curl "http://localhost:16686/api/traces?service=crucible-backend&limit=1"
 cargo run -p backend
 ```
 
+### Running the backup service
+```bash
+export DATABASE_URL="postgres://postgres:password@localhost/crucible_dev"
+export REDIS_URL="redis://127.0.0.1/"
+export BACKUP_DIR="/tmp/crucible_backups"
+
+cargo run -p backend --bin backup
+```
+
 ## Testing
 ```bash
 # All tests (unit + integration + load)
@@ -445,6 +466,18 @@ cargo test -p backend
 cargo test -p backend --test load_tests -- --nocapture
 ```
 
+## Backup Service Configuration
+
+All configuration is via environment variables.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes | — | PostgreSQL connection string |
+| `REDIS_URL` | No | `redis://127.0.0.1/` | Redis connection string |
+| `BACKUP_QUEUE` | No | `backup_jobs` | Redis list key for backup jobs |
+| `RESTORE_QUEUE` | No | `restore_jobs` | Redis list key for restore jobs |
+| `BIND_ADDR` | No | `0.0.0.0:8080` | HTTP server bind address |
+| `BACKUP_DIR` | No | `/var/backups/crucible` | Directory for `pg_dump` output files |
 ## Configuration Hot-Reload
 
 `ConfigWatcher` holds the live `AppConfig` behind an `Arc<RwLock<_>>`. Any part of the application that holds a `ConfigHandle` sees new values immediately after a reload — no restart required.
@@ -554,6 +587,10 @@ Seeds populate:
 - `users` table with two default accounts (`admin`, `dev`)
 - `feature_flags` table with baseline flags (`new_dashboard`, `beta_api`)
 
+## Database Migrations (Backup Service)
+
+The backup service runs inline DDL on startup to create the `backups` table
+if it does not already exist. No external migration tool is required.
 ## Configuration Hot-Reload
 
 The backend supports hot-reloading configuration from `config.json` without restarting the server.
