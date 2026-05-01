@@ -2,6 +2,7 @@ use backend::{
     config::Config,
     jobs::{monitor_transaction, TransactionMonitorJob},
     api::handlers::{profiling, stellar},
+    api::middleware::logging::logging_middleware,
     services::{
         sys_metrics::MetricsExporter,
         error_recovery::ErrorManager,
@@ -23,6 +24,7 @@ use apalis::prelude::*;
 use apalis_redis::RedisStorage;
 use sqlx::postgres::PgPoolOptions;
 use redis::aio::ConnectionManager;
+use redis::Client as RedisClient;
 use std::sync::Arc;
 use tracing::info_span;
 
@@ -63,16 +65,20 @@ async fn main() -> Result<(), anyhow::Error> {
     tracing::info!("Database pool initialized");
     drop(_db_enter);
 
+    let redis_client = RedisClient::open(config.redis_url.clone())?;
+
     // Initialize services
     let metrics_exporter = Arc::new(MetricsExporter::new());
     let error_manager = Arc::new(ErrorManager::new());
-    let (_log_aggregator, log_receiver) = LogAggregator::new();
+    let (log_aggregator, log_receiver) = LogAggregator::new();
+    let log_aggregator = Arc::new(log_aggregator);
 
     // Spawn background workers for new services
     tokio::spawn(MetricsExporter::run_collector(metrics_exporter.clone()));
     tokio::spawn(LogAggregator::run_worker(log_receiver));
 
     // Redis Job Queue setup
+    let conn = ConnectionManager::new(redis_client.clone()).await?;
     let redis_span = TracingService::redis_command_span("CONNECT", None);
     let _redis_enter = redis_span.enter();
 
@@ -92,6 +98,8 @@ async fn main() -> Result<(), anyhow::Error> {
         db: db_pool,
         metrics_exporter,
         error_manager,
+        log_aggregator,
+        redis: redis_client,
     });
 
     // Define OpenAPI documentation
@@ -125,10 +133,10 @@ async fn main() -> Result<(), anyhow::Error> {
             .route("/health", get(profiling::get_health))
             .route("/prometheus", get(profiling::get_prometheus_metrics))
         )
-        // Add routes from origin/main
         .route("/api/status", get(profiling::get_system_status))
         .route("/api/profile", post(profiling::trigger_profile_collection))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .layer(middleware::from_fn_with_state(state.clone(), logging_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state);

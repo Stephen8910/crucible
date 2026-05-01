@@ -8,13 +8,18 @@ use std::sync::Arc;
 use crate::services::{
     sys_metrics::MetricsExporter,
     error_recovery::ErrorManager,
+    log_aggregator::LogAggregator,
     tracing::TracingService,
 };
+use sqlx::PgPool;
+use redis::Client as RedisClient;
 
 pub struct AppState {
     pub db: sqlx::PgPool,
     pub metrics_exporter: Arc<MetricsExporter>,
     pub error_manager: Arc<ErrorManager>,
+    pub log_aggregator: Arc<LogAggregator>,
+    pub redis: RedisClient,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
