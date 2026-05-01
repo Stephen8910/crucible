@@ -1,5 +1,4 @@
 use backend::{
-    telemetry::init_telemetry, 
     config::Config,
     jobs::{monitor_transaction, TransactionMonitorJob},
     api::handlers::{profiling, stellar},
@@ -8,6 +7,7 @@ use backend::{
         sys_metrics::MetricsExporter,
         error_recovery::ErrorManager,
         log_aggregator::LogAggregator,
+        tracing::{TracingService, TracingConfig},
     },
 };
 use axum::{routing::{get, post}, Router, middleware};
@@ -26,22 +26,44 @@ use sqlx::postgres::PgPoolOptions;
 use redis::aio::ConnectionManager;
 use redis::Client as RedisClient;
 use std::sync::Arc;
+use tracing::info_span;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     // Load configuration
     let config = Config::from_env()?;
 
-    // Initialize observability
-    init_telemetry();
+    // Initialize OpenTelemetry tracing FIRST - before any other services
+    let tracing_config = TracingConfig::new(
+        "crucible-backend".to_string(),
+        env!("CARGO_PKG_VERSION").to_string(),
+    )
+    .with_environment(std::env::var("ENV").unwrap_or("dev".to_string()))
+    .with_otlp_endpoint(
+        std::env::var("OTLP_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:4317".to_string())
+    );
+
+    TracingService::init(tracing_config)?;
+
+    let span = info_span!("app.startup");
+    let _enter = span.enter();
 
     // Database setup & migrations
+    let db_span = TracingService::db_query_span(
+        "CONNECT postgresql",
+        "postgres",
+        "CONNECT",
+    );
+    let _db_enter = db_span.enter();
+
     let db_pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&config.database_url)
         .await?;
     
-    tracing::info!("Database migrations synchronized");
+    tracing::info!("Database pool initialized");
+    drop(_db_enter);
 
     let redis_client = RedisClient::open(config.redis_url.clone())?;
 
@@ -57,7 +79,15 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Redis Job Queue setup
     let conn = ConnectionManager::new(redis_client.clone()).await?;
+    let redis_span = TracingService::redis_command_span("CONNECT", None);
+    let _redis_enter = redis_span.enter();
+
+    let redis_client = redis::Client::open(config.redis_url.clone())?;
+    let conn = ConnectionManager::new(redis_client).await?;
     let storage: RedisStorage<TransactionMonitorJob> = RedisStorage::new(conn);
+    
+    tracing::info!("Redis connection established");
+    drop(_redis_enter);
     
     let worker = WorkerBuilder::new("monitor-worker")
         .backend(storage)
@@ -113,7 +143,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Run it with graceful shutdown and background workers
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
-    tracing::info!("listening on {}", addr);
+    tracing::info!("Crucible backend listening on {}", addr);
     
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     

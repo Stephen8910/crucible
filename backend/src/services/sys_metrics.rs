@@ -2,7 +2,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
-use tracing::info;
+use tracing::{info, instrument};
+use crate::services::tracing::TracingService;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SystemMetrics {
@@ -26,7 +27,11 @@ impl MetricsExporter {
         }
     }
 
+    #[instrument(skip(self), fields(service.name = "MetricsExporter", service.method = "update_metrics"))]
     pub async fn update_metrics(&self, cpu: f64, mem: u64, uptime: u64) {
+        let span = TracingService::service_method_span("MetricsExporter", "update_metrics");
+        let _enter = span.enter();
+        
         let mut metrics = self.current_metrics.write().await;
         metrics.cpu_usage = cpu;
         metrics.memory_usage = mem;
@@ -35,11 +40,19 @@ impl MetricsExporter {
         info!(metrics = ?*metrics, "Updated system metrics");
     }
 
+    #[instrument(skip(self), fields(service.name = "MetricsExporter", service.method = "get_metrics"))]
     pub async fn get_metrics(&self) -> SystemMetrics {
+        let span = TracingService::service_method_span("MetricsExporter", "get_metrics");
+        let _enter = span.enter();
+        
         self.current_metrics.read().await.clone()
     }
 
+    #[instrument(skip(exporter), fields(service.name = "MetricsExporter", service.method = "run_collector"))]
     pub async fn run_collector(exporter: Arc<Self>) {
+        let span = TracingService::service_method_span("MetricsExporter", "run_collector");
+        let _enter = span.enter();
+        
         info!("Starting system metrics collector worker");
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
         let start_time = Utc::now();
