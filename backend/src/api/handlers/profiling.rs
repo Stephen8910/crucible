@@ -16,6 +16,7 @@ use crate::services::{
     log_aggregator::LogAggregator,
     tracing::TracingService,
 };
+use crate::config::reload::ConfigManager;
 use sqlx::PgPool;
 use redis::Client as RedisClient;
 
@@ -23,6 +24,7 @@ pub struct AppState {
     pub db: Option<sqlx::PgPool>,
     pub metrics_exporter: Arc<MetricsExporter>,
     pub error_manager: Arc<ErrorManager>,
+    pub config_manager: Arc<ConfigManager>,
     pub log_aggregator: Arc<LogAggregator>,
     pub redis: RedisClient,
 }

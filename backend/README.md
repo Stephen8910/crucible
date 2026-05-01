@@ -553,6 +553,34 @@ run_all(&pool).await?;
 Seeds populate:
 - `users` table with two default accounts (`admin`, `dev`)
 - `feature_flags` table with baseline flags (`new_dashboard`, `beta_api`)
+
+## Configuration Hot-Reload
+
+The backend supports hot-reloading configuration from `config.json` without restarting the server.
+
+### Configuration Structure
+
+```rust
+pub struct AppConfig {
+    pub server: ServerConfig,
+    pub database: DatabaseConfig,
+    pub redis: RedisConfig,
+    pub log_level: String,
+}
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/config` | Retrieve current configuration (sanitized) |
+| `POST` | `/api/config/reload` | Trigger a reload from `config.json` |
+
+### Usage
+
+1. Create a `config.json` in the root directory.
+2. Update values in the file.
+3. Call `POST /api/config/reload` to apply changes.
 ## Structure
 - `src/api/` – API handlers and routing
 - `src/config/` – Environment configuration

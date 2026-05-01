@@ -1,3 +1,8 @@
+mod api;
+mod services;
+mod config;
+
+use std::sync::Arc;
 use apalis::prelude::*;
 use apalis_redis::RedisStorage;
 use axum::{
@@ -33,6 +38,7 @@ use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
+use crate::config::{AppConfig, reload::{ConfigManager, handle_reload, handle_get_config}};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use profiling::AppState;
@@ -99,6 +105,10 @@ async fn main() -> Result<(), anyhow::Error> {
 
     tokio::spawn(MetricsExporter::run_collector(metrics_exporter.clone()));
     tokio::spawn(LogAggregator::run_worker(log_receiver));
+    
+    // Initialize config manager
+    let config = AppConfig::default();
+    let config_manager = Arc::new(ConfigManager::new(config));
 
     // Redis + job queue setup
     // Redis Job Queue setup
@@ -129,6 +139,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let dashboard_state = Arc::new(DashboardState {
         metrics_exporter,
         error_manager,
+        config_manager: config_manager.clone(),
         alert_manager,
         log_aggregator,
         redis: redis_client,
@@ -156,6 +167,11 @@ async fn main() -> Result<(), anyhow::Error> {
         .allow_headers(Any);
 
     let app = Router::new()
+        .route("/api/status", get(get_system_status))
+        .route("/api/profile", post(trigger_profile_collection))
+        .route("/api/config", get(handle_get_config))
+        .route("/api/config/reload", post(handle_reload))
+        .with_state(state);
         .route("/", get(|| async { "Crucible Backend API" }))
         .route("/.well-known/stellar.toml", get(stellar::get_stellar_toml))
         .nest(
