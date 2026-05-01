@@ -9,6 +9,7 @@ pub struct TransactionMonitorJob {
 
 /// Handler for monitoring Stellar transactions.
 /// Returning () since Apalis 0.6 handlers can return ().
+pub async fn monitor_transaction(job: TransactionMonitorJob) {
 #[instrument(skip_all, fields(job.name = "monitor_transaction", job.id = %job.tx_hash))]
 pub async fn monitor_transaction(
     job: TransactionMonitorJob,

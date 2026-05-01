@@ -24,9 +24,12 @@
 
 #![allow(dead_code)]
 
+use chrono::{DateTime, Utc};
+use redis::{AsyncCommands, Client as RedisClient};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use redis::{Client as RedisClient, AsyncCommands};
 use thiserror::Error;
+use tracing::{debug, info, warn};
 use tracing::{debug, info, warn, instrument};
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
@@ -102,7 +105,7 @@ impl FeatureFlagService {
     /// Returns [`FlagError::NotFound`] if the flag doesn't exist.
     #[instrument(skip(self), fields(service.name = "FeatureFlagService", service.method = "is_enabled"))]
     pub async fn is_enabled(&self, key: &str) -> Result<bool, FlagError> {
-        let cache_key = format!("flag:{}", key);
+        let cache_key = format!("flag:{key}");
 
         // Try cache first with Redis tracing
         let redis_span = TracingService::redis_command_span("GET", Some(&cache_key));
@@ -129,6 +132,11 @@ impl FeatureFlagService {
 
         // Cache miss – query database with DB tracing
         debug!(key = %key, "Feature flag cache miss – querying database");
+        let row: Option<(bool,)> =
+            sqlx::query_as("SELECT enabled FROM feature_flags WHERE key = $1")
+                .bind(key)
+                .fetch_optional(&self.db)
+                .await?;
         
         let db_span = TracingService::db_query_span(
             "SELECT enabled FROM feature_flags WHERE key = $1",
@@ -185,7 +193,7 @@ impl FeatureFlagService {
         let _db_enter = db_span.enter();
         
         let row: Option<(String, bool, String, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT key, enabled, description, updated_at FROM feature_flags WHERE key = $1"
+            "SELECT key, enabled, description, updated_at FROM feature_flags WHERE key = $1",
         )
         .bind(key)
         .fetch_optional(&self.db)
@@ -219,7 +227,7 @@ impl FeatureFlagService {
         let _db_enter = db_span.enter();
         
         let rows: Vec<(String, bool, String, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT key, enabled, description, updated_at FROM feature_flags ORDER BY key"
+            "SELECT key, enabled, description, updated_at FROM feature_flags ORDER BY key",
         )
         .fetch_all(&self.db)
         .await
@@ -245,6 +253,8 @@ impl FeatureFlagService {
     /// Create or update a feature flag.
     ///
     /// This method upserts the flag in PostgreSQL and invalidates the cache.
+    pub async fn set(&self, key: &str, enabled: bool, description: &str) -> Result<(), FlagError> {
+        sqlx::query(
     #[instrument(skip(self), fields(service.name = "FeatureFlagService", service.method = "set"))]
     pub async fn set(
         &self,
@@ -327,6 +337,9 @@ impl FeatureFlagService {
     /// Invalidate the Redis cache for a specific flag.
     #[instrument(skip(self), fields(service.name = "FeatureFlagService", service.method = "invalidate_cache"))]
     async fn invalidate_cache(&self, key: &str) -> Result<(), FlagError> {
+        let cache_key = format!("flag:{key}");
+        let mut conn = self.redis.get_multiplexed_async_connection().await?;
+        let deleted: i32 = conn.del(&cache_key).await?;
         let cache_key = format!("flag:{}", key);
         
         let redis_span = TracingService::redis_command_span("DEL", Some(&cache_key));

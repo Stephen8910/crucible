@@ -1,22 +1,38 @@
+use apalis::prelude::*;
+use apalis_redis::RedisStorage;
+use axum::{
+    routing::{get, post},
+    Router,
+};
+use backend::api::handlers::dashboard::{get_dashboard, DashboardState};
 use backend::{
+    api::handlers::{profiling, stellar},
+    config::Config,
+    jobs::{monitor_transaction, TransactionMonitorJob},
     config::Config,
     jobs::{monitor_transaction, TransactionMonitorJob},
     api::handlers::{profiling, stellar},
     api::middleware::logging::logging_middleware,
     services::{
+        error_recovery::ErrorManager, log_aggregator::LogAggregator, log_alerts::AlertManager,
         sys_metrics::MetricsExporter,
         error_recovery::ErrorManager,
         log_aggregator::LogAggregator,
         tracing::{TracingService, TracingConfig},
     },
+    telemetry::init_telemetry,
 };
+use profiling::AppState;
+use redis::aio::ConnectionManager;
+use sqlx::postgres::PgPoolOptions;
 use axum::{routing::{get, post}, Router, middleware};
 use std::net::SocketAddr;
-use tower_http::{
-    trace::TraceLayer,
-    cors::{CorsLayer, Any},
-};
+use std::sync::Arc;
 use tokio::signal;
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use profiling::AppState;
@@ -33,6 +49,10 @@ async fn main() -> Result<(), anyhow::Error> {
     // Load configuration
     let config = Config::from_env()?;
 
+    // Initialize observability (fmt tracing subscriber)
+    init_telemetry();
+
+    // Database setup
     // Initialize OpenTelemetry tracing FIRST - before any other services
     let tracing_config = TracingConfig::new(
         "crucible-backend".to_string(),
@@ -61,6 +81,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .max_connections(5)
         .connect(&config.database_url)
         .await?;
+
+    tracing::info!("Database connection established");
     
     tracing::info!("Database pool initialized");
     drop(_db_enter);
@@ -70,21 +92,24 @@ async fn main() -> Result<(), anyhow::Error> {
     // Initialize services
     let metrics_exporter = Arc::new(MetricsExporter::new());
     let error_manager = Arc::new(ErrorManager::new());
+    let alert_manager = Arc::new(AlertManager::new());
+    let (_log_aggregator, log_receiver) = LogAggregator::new();
     let (log_aggregator, log_receiver) = LogAggregator::new();
     let log_aggregator = Arc::new(log_aggregator);
 
-    // Spawn background workers for new services
     tokio::spawn(MetricsExporter::run_collector(metrics_exporter.clone()));
     tokio::spawn(LogAggregator::run_worker(log_receiver));
 
+    // Redis + job queue setup
     // Redis Job Queue setup
     let conn = ConnectionManager::new(redis_client.clone()).await?;
     let redis_span = TracingService::redis_command_span("CONNECT", None);
     let _redis_enter = redis_span.enter();
 
     let redis_client = redis::Client::open(config.redis_url.clone())?;
-    let conn = ConnectionManager::new(redis_client).await?;
+    let conn = ConnectionManager::new(redis_client.clone()).await?;
     let storage: RedisStorage<TransactionMonitorJob> = RedisStorage::new(conn);
+
     
     tracing::info!("Redis connection established");
     drop(_redis_enter);
@@ -93,16 +118,23 @@ async fn main() -> Result<(), anyhow::Error> {
         .backend(storage)
         .build_fn(monitor_transaction);
 
-    // Create shared state
-    let state = Arc::new(AppState {
-        db: db_pool,
+    // Shared state for profiling/status routes
+    let profiling_state = Arc::new(AppState {
+        db: Some(db_pool),
+        metrics_exporter: metrics_exporter.clone(),
+        error_manager: error_manager.clone(),
+    });
+
+    // Shared state for dashboard route
+    let dashboard_state = Arc::new(DashboardState {
         metrics_exporter,
         error_manager,
+        alert_manager,
         log_aggregator,
         redis: redis_client,
     });
 
-    // Define OpenAPI documentation
+    // OpenAPI docs
     #[derive(OpenApi)]
     #[openapi(
         paths(
@@ -118,36 +150,37 @@ async fn main() -> Result<(), anyhow::Error> {
     )]
     struct ApiDoc;
 
-    // Configure CORS
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build our application with routes
     let app = Router::new()
         .route("/", get(|| async { "Crucible Backend API" }))
         .route("/.well-known/stellar.toml", get(stellar::get_stellar_toml))
-        .nest("/api/v1/profiling", Router::new()
-            .route("/metrics", get(profiling::get_metrics))
-            .route("/health", get(profiling::get_health))
-            .route("/prometheus", get(profiling::get_prometheus_metrics))
+        .nest(
+            "/api/v1/profiling",
+            Router::new()
+                .route("/metrics", get(profiling::get_metrics))
+                .route("/health", get(profiling::get_health))
+                .route("/prometheus", get(profiling::get_prometheus_metrics)),
         )
         .route("/api/status", get(profiling::get_system_status))
         .route("/api/profile", post(profiling::trigger_profile_collection))
+        .with_state(profiling_state)
+        .route("/api/dashboard", get(get_dashboard))
+        .with_state(dashboard_state)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(middleware::from_fn_with_state(state.clone(), logging_middleware))
         .layer(TraceLayer::new_for_http())
-        .layer(cors)
-        .with_state(state);
+        .layer(cors);
 
-    // Run it with graceful shutdown and background workers
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
+    tracing::info!("listening on {}", addr);
+
     tracing::info!("Crucible backend listening on {}", addr);
     
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    
-    tracing::info!("Starting services...");
 
     tokio::select! {
         res = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()) => {

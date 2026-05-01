@@ -1,3 +1,4 @@
+pub mod alerts;
 pub mod error_recovery;
 pub mod feature_flags;
 pub mod log_aggregator;

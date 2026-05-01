@@ -3,8 +3,13 @@ use serde::{Serialize, Deserialize};
 use tracing::{info, instrument, info_span};
 use chrono::{DateTime, Utc};
 use crate::error::AppError;
-use utoipa::ToSchema;
+use crate::services::{error_recovery::ErrorManager, sys_metrics::MetricsExporter};
+use axum::{extract::State, response::IntoResponse, Json};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::{info, instrument};
+use utoipa::ToSchema;
 use crate::services::{
     sys_metrics::MetricsExporter,
     error_recovery::ErrorManager,
@@ -15,7 +20,7 @@ use sqlx::PgPool;
 use redis::Client as RedisClient;
 
 pub struct AppState {
-    pub db: sqlx::PgPool,
+    pub db: Option<sqlx::PgPool>,
     pub metrics_exporter: Arc<MetricsExporter>,
     pub error_manager: Arc<ErrorManager>,
     pub log_aggregator: Arc<LogAggregator>,
@@ -69,6 +74,9 @@ pub async fn get_metrics(
     let _enter = span.enter();
     
     info!("Collecting performance metrics");
+
+    let sys_metrics = state.metrics_exporter.get_metrics().await;
+
     
     // Instrument the metrics exporter call
     let metrics_span = TracingService::service_method_span("MetricsExporter", "get_metrics");
@@ -114,6 +122,7 @@ pub async fn get_health(
     let _enter = span.enter();
     
     info!("Performing system health check");
+
     
     // Check database connectivity with tracing
     let db_span = TracingService::db_query_span(
@@ -137,6 +146,7 @@ pub async fn get_health(
         status: if db_healthy { "healthy" } else { "degraded" }.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: Utc::now(),
+        database_connected: true,
         database_connected: db_healthy,
         redis_connected: true,
     };
@@ -159,6 +169,15 @@ pub async fn get_prometheus_metrics() -> impl IntoResponse {
     info!("Exporting Prometheus-format metrics");
     
     "# HELP backend_requests_total Total number of requests\n\
+                   # TYPE backend_requests_total counter\n\
+                   backend_requests_total 1024\n\
+                   # HELP backend_ledger_latency_ms Current ledger ingestion latency\n\
+                   # TYPE backend_ledger_latency_ms gauge\n\
+                   backend_ledger_latency_ms 120\n"
+        .to_string()
+}
+
+pub async fn get_system_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
      # TYPE backend_requests_total counter\n\
      backend_requests_total 1024\n\
      # HELP backend_ledger_latency_ms Current ledger ingestion latency\n\
@@ -193,6 +212,7 @@ pub async fn get_system_status(
     }))
 }
 
+pub async fn trigger_profile_collection(State(_state): State<Arc<AppState>>) -> impl IntoResponse {
 /// Handler to trigger profile collection (CPU, memory profiling)
 #[instrument(skip_all, fields(http.method = "POST", http.route = "/api/profile"))]
 pub async fn trigger_profile_collection(
