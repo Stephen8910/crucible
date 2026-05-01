@@ -1,27 +1,44 @@
 use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+    response::IntoResponse,
     routing::get,
     Router,
 };
+use backend::api::handlers::profiling::{get_system_status, AppState};
+use backend::services::{error_recovery::ErrorManager, sys_metrics::MetricsExporter};
 use std::sync::Arc;
 use tower::ServiceExt;
-use hyper::{Request, StatusCode};
-use backend::api::handlers::profiling::{AppState, get_system_status};
-use backend::services::{
-    sys_metrics::MetricsExporter,
-    error_recovery::ErrorManager,
-};
-
-// We need to make modules public or use a common library for this to work perfectly in integration tests.
-// For the sake of this task, I'll assume the structure allows for this or adjust as needed.
 
 #[tokio::test]
-async fn test_get_status_endpoint() {
-    let metrics_exporter = Arc::new(MetricsExporter::new());
-    let error_manager = Arc::new(ErrorManager::new());
+async fn test_health_check_integration() {
+    // Placeholder — full integration test requires a live DB.
+}
 
+#[tokio::test]
+async fn test_stellar_toml_headers() {
+    use backend::api::handlers::stellar::get_stellar_toml;
+    let response = get_stellar_toml().await.into_response();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let cors = response
+        .headers()
+        .get("access-control-allow-origin")
+        .unwrap();
+    assert_eq!(cors, "*");
+}
+
+    let config_manager = Arc::new(backend::config::reload::ConfigManager::new(backend::config::AppConfig::default()));
     let state = Arc::new(AppState {
         metrics_exporter,
         error_manager,
+        config_manager,
+#[tokio::test]
+async fn test_get_status_endpoint() {
+    let state = Arc::new(AppState {
+        db: None,
+        metrics_exporter: Arc::new(MetricsExporter::new()),
+        error_manager: Arc::new(ErrorManager::new()),
     });
 
     let app = Router::new()
@@ -32,7 +49,7 @@ async fn test_get_status_endpoint() {
         .oneshot(
             Request::builder()
                 .uri("/api/status")
-                .body(axum::body::Body::empty())
+                .body(Body::empty())
                 .unwrap(),
         )
         .await
