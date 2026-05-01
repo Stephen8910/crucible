@@ -36,7 +36,7 @@ mockall = { version = "0.13", optional = true }
 opentelemetry = { version = "0.24", features = ["trace", "metrics"] }
 opentelemetry-otlp = { version = "0.17", features = ["trace", "grpc-tonic"] }
 opentelemetry-semantic-conventions = "0.16"
-opentelemetry_sdk = { version = "0.24", features = ["trace", "rt-tokio"] }
+opentelemetry-sdk = { version = "0.24", features = ["trace", "rt-tokio"] }
 tracing-opentelemetry = "0.25"
 tonic = "0.12"
 
@@ -51,5 +51,3 @@ mime = "0.3"
 [[bench]]
 name = "performance"
 harness = false
-
-

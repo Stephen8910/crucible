@@ -4,3 +4,4 @@ pub mod log_aggregator;
 pub mod log_alerts;
 pub mod sys_metrics;
 pub mod business_metrics;
+pub mod tracing;
