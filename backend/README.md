@@ -123,6 +123,8 @@ The backend runs several background workers for system health and data consisten
 | `GET` | `/.well-known/stellar.toml` | Stellar network metadata (SEP-1) |
 | `GET` | `/api/v1/profiling/metrics` | Detailed performance metrics (OpenAPI) |
 | `GET` | `/api/v1/profiling/health` | Service health check (OpenAPI) |
+| `GET` | `/api/v1/dashboard/metrics` | Dashboard aggregated metrics with Redis caching |
+| `GET` | `/api/v1/dashboard/contracts/:contract_id/stats` | Contract-specific statistics |
 | `GET` | `/api/v1/profiling/prometheus` | Prometheus-compatible metrics |
 | `GET` | `/api/status` | System health summary and recovery status |
 | `POST` | `/api/profile` | Trigger a manual profiling collection run |

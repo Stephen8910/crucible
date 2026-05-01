@@ -16,6 +16,7 @@ use backend::{
     jobs::{monitor_transaction, TransactionMonitorJob},
     config::Config,
     jobs::{monitor_transaction, TransactionMonitorJob},
+    api::handlers::{profiling, stellar, dashboard},
     api::handlers::{profiling, stellar},
     api::middleware::logging::logging_middleware,
     services::{
@@ -118,6 +119,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let redis_client = redis::Client::open(config.redis_url.clone())?;
     let conn = ConnectionManager::new(redis_client.clone()).await?;
+    let redis_conn_dashboard = ConnectionManager::new(redis_client).await?;
     let storage: RedisStorage<TransactionMonitorJob> = RedisStorage::new(conn);
 
     
@@ -128,6 +130,9 @@ async fn main() -> Result<(), anyhow::Error> {
         .backend(storage)
         .build_fn(monitor_transaction);
 
+    // Create shared state
+    let state = Arc::new(AppState {
+        db: db_pool.clone(),
     // Shared state for profiling/status routes
     let profiling_state = Arc::new(AppState {
         db: Some(db_pool),
@@ -145,18 +150,33 @@ async fn main() -> Result<(), anyhow::Error> {
         redis: redis_client,
     });
 
+    // Create dashboard state
+    let dashboard_state = Arc::new(dashboard::DashboardState {
+        db: db_pool,
+        redis: redis_conn_dashboard,
+    });
+
+    // Define OpenAPI documentation
     // OpenAPI docs
     #[derive(OpenApi)]
     #[openapi(
         paths(
             profiling::get_metrics,
             profiling::get_health,
+            dashboard::get_dashboard_metrics,
+            dashboard::get_contract_stats,
         ),
         components(
-            schemas(profiling::MetricsReport, profiling::HealthResponse)
+            schemas(
+                profiling::MetricsReport, 
+                profiling::HealthResponse,
+                dashboard::DashboardMetrics,
+                dashboard::ContractStats
+            )
         ),
         tags(
-            (name = "profiling", description = "Performance and health monitoring endpoints")
+            (name = "profiling", description = "Performance and health monitoring endpoints"),
+            (name = "dashboard", description = "Dashboard metrics and analytics endpoints")
         )
     )]
     struct ApiDoc;
@@ -180,6 +200,11 @@ async fn main() -> Result<(), anyhow::Error> {
                 .route("/metrics", get(profiling::get_metrics))
                 .route("/health", get(profiling::get_health))
                 .route("/prometheus", get(profiling::get_prometheus_metrics)),
+        )
+        .nest("/api/v1/dashboard", Router::new()
+            .route("/metrics", get(dashboard::get_dashboard_metrics))
+            .route("/contracts/:contract_id/stats", get(dashboard::get_contract_stats))
+            .with_state(dashboard_state)
         )
         .route("/api/status", get(profiling::get_system_status))
         .route("/api/profile", post(profiling::trigger_profile_collection))
